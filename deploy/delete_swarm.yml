@@ -1,0 +1,34 @@
+---
+- name: 1. 讓所有 Worker 節點離開叢集
+  hosts: workers
+  become: true
+  tasks:
+    - name: 強制離開 Swarm (Worker)
+      command: docker swarm leave --force
+      register: worker_leave
+      changed_when: "'Left' in worker_leave.stdout"
+      ignore_errors: yes  # 如果節點本來就不在 Swarm 裡，不要報錯停止
+
+- name: 2. 讓 Manager 節點離開並銷毀叢集
+  hosts: managers
+  become: true
+  tasks:
+    - name: 強制離開 Swarm (Manager)
+      command: docker swarm leave --force
+      register: manager_leave
+      changed_when: "'Left' in manager_leave.stdout"
+      ignore_errors: yes
+
+    - name: 移除專案目錄 (/srv/traffic-bot)
+      file:
+        path: /srv/traffic-bot
+        state: absent
+
+- name: 3. 全面清理 Docker 殘留資源 (還原成乾淨系統)
+  hosts: all
+  become: true
+  tasks:
+    - name: 清除所有容器、網路與未使用的映像檔
+      command: docker system prune -a --volumes -f
+      register: prune_result
+      changed_when: "'Total reclaimed space' in prune_result.stdout"
