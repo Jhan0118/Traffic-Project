@@ -18,13 +18,14 @@ services:
 
     deploy:
       # 總數：35 (5 Workers * 7)
-      replicas: 35
+      replicas: 50
       
       resources:
         limits:
           cpus: '1.0'        # 允許突發到 1 核
           memory: 1200M      # 上限 1.2G
         reservations:
+          cpus: '0.55'
           memory: 600M       # [建議] 預留 600M 比較安全，避免單節點過載
           
       placement:
