@@ -1,0 +1,63 @@
+{
+  "local": [
+    "https://www.ptt.cc/bbs/index.html",
+    "https://www.mobile01.com/",
+    "https://www.dcard.tw/f",
+    "https://forum.gamer.com.tw/",
+    "https://tw.yahoo.com/",
+    "https://www.ettoday.net/",
+    "https://udn.com/news/index",
+    "https://shopee.tw/",
+    "https://www.pchome.com.tw/",
+    "https://m.momoshop.com.tw/"
+  ],
+  "global_giants": [
+    "https://www.wikipedia.org/wiki/Special:Random",
+    "https://www.amazon.com/Best-Sellers/zgbs",
+    "https://www.imdb.com/chart/top/",
+    "https://www.pinterest.com/",
+    "https://www.reddit.com/r/popular/",
+    "https://www.quora.com/",
+    "https://medium.com/topic/technology",
+    "https://vimeo.com/watch",
+    "https://soundcloud.com/discover",
+    "https://www.twitch.tv/directory"
+  ],
+  "tech": [
+    "https://news.ycombinator.com/",
+    "https://stackoverflow.com/questions?sort=Votes",
+    "https://github.com/trending",
+    "https://dev.to/top/week",
+    "https://www.theverge.com/",
+    "https://techcrunch.com/",
+    "https://arstechnica.com/",
+    "https://www.wired.com/",
+    "https://9to5mac.com/",
+    "https://www.polygon.com/"
+  ],
+  "news": [
+    "https://www.bbc.com/news",
+    "https://edition.cnn.com/",
+    "https://www.nytimes.com/",
+    "https://www.theguardian.com/international",
+    "https://www.bloomberg.com/asia",
+    "https://www.reuters.com/",
+    "https://www.wsj.com/",
+    "https://www3.nhk.or.jp/nhkworld/en/news/",
+    "https://www.aljazeera.com/"
+  ],
+  "download": [
+    "https://www.python.org/ftp/python/3.12.1/python-3.12.1-amd64.exe",
+    "https://vscode.download.prss.microsoft.com/dbazure/download/stable/e54a7d163c2340066811c164706194ee8e7137e4/VSCodeSetup-x64-1.85.1.exe",
+    "https://nodejs.org/dist/v20.10.0/node-v20.10.0-x64.msi",
+    "https://download.gimp.org/gimp/v2.10/windows/gimp-2.10.36-setup.exe",
+    "https://releases.ubuntu.com/24.04/ubuntu-24.04-live-server-amd64.iso",
+    "https://download.visualstudio.microsoft.com/download/pr/40459379-9941-4796-857e-976a4df83449/714041a6609903e1c667634f5982e519/vs_Community.exe"
+  ],
+  "video": [
+    "https://www.youtube.com/watch?v=jfKfPfyJRdk",
+    "https://www.youtube.com/watch?v=4xDzrJKXOOY",
+    "https://vimeo.com/channels/staffpicks",
+    "https://www.twitch.tv/directory/category/just-chatting"
+  ]
+}

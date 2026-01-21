@@ -1,0 +1,72 @@
+---
+- name: 1. 基礎環境設定 (所有節點)
+  hosts: all
+  become: true
+  tasks:
+    - name: 更新 apt 快取
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: 安裝 Python Docker SDK
+      apt:
+        name:
+          - python3-docker
+          - python3-pip
+        state: present
+
+    - name: 安裝 Docker
+      shell: "curl -fsSL https://get.docker.com | sh"
+      args:
+        creates: /usr/bin/docker
+
+    - name: 設定 UFW 防火牆 (開放 Swarm 必要埠口)
+      shell: |
+        ufw allow 22/tcp
+        ufw allow 2377/tcp
+        ufw allow 7946/tcp
+        ufw allow 7946/udp
+        ufw allow 4789/udp
+        ufw --force enable
+
+- name: 2. Manager 節點設定
+  hosts: managers
+  become: true
+  tasks:
+    - name: 初始化 Swarm Cluster
+      community.docker.docker_swarm:
+        state: present
+        advertise_addr: "{{ ansible_host }}"
+      register: swarm_info
+
+    - name: 取得 Worker Join Token
+      set_fact:
+        worker_token: "{{ swarm_info.swarm_facts.JoinTokens.Worker }}"
+
+    - name: 登入 Docker Hub (傳遞權限給 Worker)
+      community.docker.docker_login:
+        username: "{{ docker_hub_user }}"
+        password: "{{ docker_hub_pass }}"
+        registry_url: https://index.docker.io/v1/
+      no_log: true
+
+    - name: 複製 docker-stack.yml 到 Manager
+      copy:
+        src: ./docker-stack.yml
+        dest: /home/manager/docker-stack.yml
+
+    - name: 部署 Swarm Stack
+      shell: |
+        docker stack deploy --with-registry-auth -c docker-stack.yml my-simulation
+      args:
+        chdir: /home/manager
+
+- name: 3. Worker 節點設定
+  hosts: workers
+  become: true
+  tasks:
+    - name: 加入 Swarm Cluster
+      community.docker.docker_swarm:
+        state: join
+        join_token: "{{ hostvars[groups['managers'][0]]['worker_token'] }}"
+        remote_addrs: [ "{{ hostvars[groups['managers'][0]]['ansible_host'] }}:2377" ]
