@@ -17,7 +17,6 @@
     "https://www.imdb.com/chart/top/",
     "https://www.pinterest.com/",
     "https://www.reddit.com/r/popular/",
-    "https://www.quora.com/",
     "https://medium.com/topic/technology",
     "https://vimeo.com/watch",
     "https://soundcloud.com/discover",
@@ -51,7 +50,6 @@
     "https://vscode.download.prss.microsoft.com/dbazure/download/stable/e54a7d163c2340066811c164706194ee8e7137e4/VSCodeSetup-x64-1.85.1.exe",
     "https://nodejs.org/dist/v20.10.0/node-v20.10.0-x64.msi",
     "https://download.gimp.org/gimp/v2.10/windows/gimp-2.10.36-setup.exe",
-    "https://releases.ubuntu.com/24.04/ubuntu-24.04-live-server-amd64.iso",
     "https://download.visualstudio.microsoft.com/download/pr/40459379-9941-4796-857e-976a4df83449/714041a6609903e1c667634f5982e519/vs_Community.exe"
   ],
   "video": [
