@@ -4,3 +4,13 @@
 *.yaml text eol=lf
 *.json text eol=lf
 *.py text eol=lf
+venv/
+.venv/
+env/
+pycache/
+*.py[cod]
+*$py.class
+.vscode/
+.DS_Store
+Thumbs.db
+/traffic_data/
