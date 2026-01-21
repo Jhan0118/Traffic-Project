@@ -2,23 +2,46 @@ version: '3.8'
 
 services:
   traffic-bot:
-    # [重要] 請修改為你的 Image 名稱
-    image: jhancc0118/traffic-generation:v2
+    # [Image] 使用 V3 版本
+    image: jhancc0118/traffic-generation:v3
     environment:
       - HEADLESS_MODE=true
+    
+    # [關鍵 1] 掛載設定檔 (V3 必備)
+    configs:
+      - source: sites_config
+        target: /traffic_data/sites.json
+    
+    # [關鍵 2] 使用記憶體當暫存區 (保護硬碟)
+    tmpfs:
+      - /tmp
+
     deploy:
-      replicas: 20
+      # 總數：35 (5 Workers * 7)
+      replicas: 35
+      
       resources:
         limits:
-          cpus: '0.8'
-          memory: 1G
+          cpus: '1.0'        # 允許突發到 1 核
+          memory: 1200M      # 上限 1.2G
         reservations:
-          memory: 300M
+          memory: 600M       # [建議] 預留 600M 比較安全，避免單節點過載
+          
       placement:
         constraints:
           - node.role == worker
+      
+      # [關鍵 3] 優化更新策略
       update_config:
-        parallelism: 2
+        parallelism: 5       # 每次更新 5 個 (加速部署)
         delay: 10s
+        order: stop-first    # 先關舊的再開新的 (防止記憶體爆掉)
+      
       restart_policy:
         condition: on-failure
+        max_attempts: 3
+
+# [關鍵 4] 定義設定檔來源
+configs:
+  sites_config:
+    file: /srv/traffic-bot/sites.json
