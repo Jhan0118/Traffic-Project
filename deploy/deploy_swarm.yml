@@ -18,6 +18,10 @@
           - python3-docker
           - python3-pip
         state: present
+      register: apt_install_result
+      until: apt_install_result is success
+      retries: 10
+      delay: 10
 
     - name: 安裝 Docker
       shell: "curl -fsSL https://get.docker.com | sh"
@@ -54,35 +58,25 @@
         registry_url: https://index.docker.io/v1/
       no_log: true
 
-    # [關鍵步驟 1] 建立統一的專案目錄
-    # 這解決了 "找不到 /home/manager" 的問題
     - name: 建立專案目錄 /srv/traffic-bot
       file:
         path: /srv/traffic-bot
         state: directory
         mode: '0755'
 
-    # [關鍵步驟 2] 複製 sites.json 到該目錄
-    # Swarm 的 Configs 會從這裡讀取檔案
     - name: 複製 sites.json 到 /srv/traffic-bot
       copy:
         src: ../src/sites.json
         dest: /srv/traffic-bot/sites.json
         mode: '0644'
 
-    # [關鍵步驟 3] 複製 docker-stack.yml 到該目錄
     - name: 複製 docker-stack.yml 到 /srv/traffic-bot
       copy:
         src: ./docker-stack.yml
         dest: /srv/traffic-bot/docker-stack.yml
         mode: '0644'
 
-    # [關鍵步驟 4] 在該目錄執行部署指令
-    - name: 部署 Swarm Stack
-      shell: |
-        docker stack deploy --with-registry-auth -c docker-stack.yml my-simulation
-      args:
-        chdir: /srv/traffic-bot
+    # [已移除] 部署動作移至最後一步，確保 Worker 到齊
 
 - name: 3. Worker 節點設定
   hosts: workers
@@ -93,3 +87,14 @@
         state: join
         join_token: "{{ hostvars[groups['managers'][0]]['worker_token'] }}"
         remote_addrs: [ "{{ hostvars[groups['managers'][0]]['ansible_host'] }}:2377" ]
+
+# [新增] 第 4 步：最後才啟動服務
+- name: 4. 啟動服務 (確保所有人都到齊才發派任務)
+  hosts: managers
+  become: true
+  tasks:
+    - name: 部署 Swarm Stack
+      shell: |
+        docker stack deploy --with-registry-auth -c docker-stack.yml my-simulation
+      args:
+        chdir: /srv/traffic-bot
