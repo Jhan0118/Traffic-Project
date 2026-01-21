@@ -195,7 +195,7 @@ class HumanBehavior:
             try: await page.click('video, .html5-video-player', timeout=3000)
             except: pass
             
-            watch_duration = random.randint(60, 180)
+            watch_duration = random.randint(180, 1800)
             logger.info(f" -> [Video] Watching for {watch_duration}s...")
             await asyncio.sleep(watch_duration)
         except: pass
@@ -294,7 +294,7 @@ async def run_browsing_session(sites_config):
 
                     except Exception: pass
                 
-                await asyncio.sleep(random.randint(2, 5))
+                await asyncio.sleep(random.randint(5, 10))
 
         finally:
             dns_task.cancel()
