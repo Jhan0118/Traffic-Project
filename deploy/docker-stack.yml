@@ -17,8 +17,7 @@ services:
       - /tmp
 
     deploy:
-      # 總數：35 (5 Workers * 7)
-      replicas: 50
+      replicas: 0
       
       resources:
         limits:
