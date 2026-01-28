@@ -1,0 +1,28 @@
+---
+- name: Stop Capture and Harvest Data
+  hosts: workers
+  become: true
+  serial: 1  # [關鍵] 一次只處理一台，避免瞬間塞爆頻寬
+  tasks:
+    - name: 1. 停止 tcpdump (SIGTERM)
+      shell: "pkill tcpdump"
+      ignore_errors: yes  # 如果已經停了或沒在跑，不要報錯
+
+    - name: 2. 等待 IO 寫入緩衝 (確保檔案結尾完整)
+      pause:
+        seconds: 2
+
+    - name: 3. 傳輸 pcap 檔案回本機
+      fetch:
+        src: "/tmp/traffic_data/{{ inventory_hostname }}.pcap"
+        # 注意：這個路徑是相對於 Playbook 檔案的位置
+        # 如果 Playbook 在 automation/playbooks/，這個路徑會指向 automation/data_lake/
+        dest: "../../traffic_data/" 
+        flat: yes  # 直接放在目錄下，不建立 IP 資料夾結構
+      register: fetch_result
+
+    - name: 4. 刪除遠端暫存檔 (釋放空間給下一輪)
+      file:
+        path: "/tmp/traffic_data/{{ inventory_hostname }}.pcap"
+        state: absent
+      when: fetch_result is succeeded  # 只有傳輸成功才刪除，避免資料遺失
