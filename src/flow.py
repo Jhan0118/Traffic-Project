@@ -10,6 +10,8 @@ import logging
 import socket
 import json
 import numpy as np
+import signal  # [新增] 訊號處理
+import sys     # [新增] 系統退出
 from playwright.async_api import async_playwright, Page, BrowserContext
 
 # --- 設定日誌 ---
@@ -300,13 +302,21 @@ async def run_browsing_session(sites_config):
             dns_task.cancel()
             await browser.close()
 
+def graceful_shutdown(signum, frame):
+    logger.info(f"Received signal {signum}. Shutting down gracefully...")
+    # 這裡可以做清理工作，但在容器中通常 sys.exit(0) 
+    # 會觸發 finally 區塊的 browser.close()
+    sys.exit(0)
+
 if __name__ == "__main__":
     logger.info("=== Starting V3.0 Simulation (Configurable) ===")
     
     # 在主程式啟動時載入一次 Config
     # 實際運作時，如果要熱更新 Config，可以在 while 迴圈內重新 load
     current_config = ConfigLoader.load_sites()
-    
+    signal.signal(signal.SIGTERM, graceful_shutdown)
+    signal.signal(signal.SIGINT, graceful_shutdown)
+
     while True:
         # 這裡每次迴圈都重新載入，實現真正的「熱更新」
         # 只要你修改了 JSON，下一個 Session 就會生效
