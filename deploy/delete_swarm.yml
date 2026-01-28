@@ -8,6 +8,7 @@
       register: worker_leave
       changed_when: "'Left' in worker_leave.stdout"
       ignore_errors: yes  # 如果節點本來就不在 Swarm 裡，不要報錯停止
+      timeout: 60         # [新增] 如果 60 秒都沒反應就放棄，避免卡死
 
 - name: 2. 讓 Manager 節點離開並銷毀叢集
   hosts: managers
@@ -18,17 +19,23 @@
       register: manager_leave
       changed_when: "'Left' in manager_leave.stdout"
       ignore_errors: yes
+      timeout: 60         # [新增] 加上超時保護
 
     - name: 移除專案目錄 (/srv/traffic-bot)
       file:
         path: /srv/traffic-bot
         state: absent
 
-- name: 3. 全面清理 Docker 殘留資源 (還原成乾淨系統)
+- name: 3. 清理 Docker 資源 (保留映像檔快取)
   hosts: all
   become: true
   tasks:
-    - name: 清除所有容器、網路與未使用的映像檔
-      command: docker system prune -a --volumes -f
+    - name: 清除容器與網路 (但保留 Image 以加速下次部署)
+      # [關鍵修改] 移除了 '-a' 參數
+      # 這樣只會刪除 Containers, Networks 和 Volumes，不會刪除 Images
+      command: docker system prune --volumes -f
       register: prune_result
       changed_when: "'Total reclaimed space' in prune_result.stdout"
+      # [新增] 針對清理指令使用非同步模式，避免 SSH 斷線
+      async: 120          # 允許執行最多 120 秒
+      poll: 5             # 每 5 秒檢查一次進度
