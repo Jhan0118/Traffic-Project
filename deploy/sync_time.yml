@@ -1,0 +1,25 @@
+---
+- name: 設定系統時區與時間同步
+  hosts: all
+  become: true
+  serial: 1  # [修改] 一次只處理一台主機，避免並行執行
+  tasks:
+    - name: 1. 設定時區為台北時間 (Asia/Taipei)
+      command: timedatectl set-timezone Asia/Taipei
+
+    - name: 2. 啟用 NTP 網路校時
+      command: timedatectl set-ntp on
+
+    - name: 3. 確保 systemd-timesyncd 服務已啟動
+      service:
+        name: systemd-timesyncd
+        state: started
+        enabled: yes
+
+    - name: 4. 顯示當前時間 (確認用)
+      shell: date
+      register: date_output
+
+    - name: 顯示設定結果
+      debug:
+        msg: "目前主機時間: {{ date_output.stdout }}"
