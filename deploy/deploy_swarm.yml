@@ -1,5 +1,5 @@
 ---
-- name: 1. 基礎環境設定 (所有節點)
+- name: 1. 基礎環境與映像檔準備 (所有節點)
   hosts: all
   become: true
   tasks:
@@ -28,6 +28,13 @@
       args:
         creates: /usr/bin/docker
 
+    # [新增] 確保 Docker 服務已啟動並設定開機自啟
+    - name: 確保 Docker 服務已啟動
+      service:
+        name: docker
+        state: started
+        enabled: yes
+
     - name: 設定 UFW 防火牆
       shell: |
         ufw allow 22/tcp
@@ -36,6 +43,25 @@
         ufw allow 7946/udp
         ufw allow 4789/udp
         ufw --force enable
+
+    # [新增] 讓所有節點登入 (為了預先下載)
+    - name: 登入 Docker Hub (所有節點)
+      community.docker.docker_login:
+        username: "{{ docker_hub_user }}"
+        password: "{{ docker_hub_pass }}"
+        registry_url: https://index.docker.io/v1/
+      no_log: true
+
+    # [新增] 預先下載 Image，這樣 Python 腳本啟動時就不用等下載
+    - name: 預先下載 Traffic Bot Image (Pre-pull)
+      community.docker.docker_image:
+        name: jhancc0118/traffic-generation:v3
+        source: pull
+        force_source: yes
+      register: image_pull
+      retries: 3
+      delay: 10
+      until: image_pull is success
 
 - name: 2. Manager 節點設定
   hosts: managers
@@ -51,12 +77,7 @@
       set_fact:
         worker_token: "{{ swarm_info.swarm_facts.JoinTokens.Worker }}"
 
-    - name: 登入 Docker Hub
-      community.docker.docker_login:
-        username: "{{ docker_hub_user }}"
-        password: "{{ docker_hub_pass }}"
-        registry_url: https://index.docker.io/v1/
-      no_log: true
+    # (原本的登入步驟已移至上方，這裡移除以避免重複)
 
     - name: 建立專案目錄 /srv/traffic-bot
       file:
@@ -64,19 +85,17 @@
         state: directory
         mode: '0755'
 
-    - name: 複製 sites.json 到 /srv/traffic-bot
+    - name: 複製 sites.json
       copy:
         src: ../src/sites.json
         dest: /srv/traffic-bot/sites.json
         mode: '0644'
 
-    - name: 複製 docker-stack.yml 到 /srv/traffic-bot
+    - name: 複製 docker-stack.yml
       copy:
         src: ./docker-stack.yml
         dest: /srv/traffic-bot/docker-stack.yml
         mode: '0644'
-
-    # [已移除] 部署動作移至最後一步，確保 Worker 到齊
 
 - name: 3. Worker 節點設定
   hosts: workers
@@ -88,8 +107,7 @@
         join_token: "{{ hostvars[groups['managers'][0]]['worker_token'] }}"
         remote_addrs: [ "{{ hostvars[groups['managers'][0]]['ansible_host'] }}:2377" ]
 
-# [新增] 第 4 步：最後才啟動服務
-- name: 4. 啟動服務 (確保所有人都到齊才發派任務)
+- name: 4. 啟動服務 (Standby Mode)
   hosts: managers
   become: true
   tasks:
