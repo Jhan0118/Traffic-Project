@@ -2,30 +2,35 @@
 - name: Stop Capture and Harvest Data
   hosts: workers
   become: true
-  serial: 1
+  serial: 1  # 一次只處理一台，避免瞬間塞爆頻寬
   tasks:
     - name: 1. 停止 tcpdump (SIGTERM)
       shell: "pkill tcpdump"
-      ignore_errors: yes
+      ignore_errors: yes  # 如果已經停了或沒在跑，不要報錯
 
-    - name: 2. 等待 IO 寫入緩衝
+    - name: 2. 等待 IO 寫入緩衝 (確保檔案結尾完整)
       pause:
         seconds: 2
 
     - name: 3. 傳輸 pcap 檔案回本機
       fetch:
         src: "/tmp/traffic_data/{{ inventory_hostname }}.pcap"
-        # [修正] 請改成 ../data_lake/
-        # 解析邏輯：
-        # 執行點: ~/Traffic-Gen/automation/
-        # ../    : ~/Traffic-Gen/
-        # 結果   : ~/Traffic-Gen/data_lake/
+        # [路徑修正] 指向 automation 的上一層 (Traffic-Gen/data_lake)
         dest: "../data_lake/" 
         flat: yes
+        validate_checksum: yes # [明確指定] 傳輸後會比對 MD5 確保檔案 100% 完整，否則視為失敗
       register: fetch_result
+      # [關鍵新增] 即使傳輸失敗 (例如網路中斷)，也要繼續執行下一步去刪檔案 (硬碟空間優先)
+      ignore_errors: yes 
 
-    - name: 4. 刪除遠端暫存檔
+    - name: 3.5. 顯示傳輸失敗警告 (若發生)
+      debug:
+        msg: "⚠️ 警告：{{ inventory_hostname }} 檔案傳輸失敗！但為了防止硬碟爆滿，仍將執行刪除。"
+      when: fetch_result is failed
+
+    - name: 4. 強制刪除遠端暫存檔 (保命機制)
       file:
         path: "/tmp/traffic_data/{{ inventory_hostname }}.pcap"
         state: absent
-      when: fetch_result is succeeded
+      # [關鍵修改] 移除了 'when: fetch_result is succeeded'
+      # 現在無論傳輸成功或失敗，這一步都會執行，確保硬碟不會爆滿
