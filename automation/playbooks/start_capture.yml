@@ -1,0 +1,19 @@
+---
+- name: Start Packet Capture (Background)
+  hosts: workers
+  become: true
+  tasks:
+    - name: 1. 確保暫存目錄存在
+      file:
+        path: /tmp/traffic_data
+        state: directory
+        mode: '0777'
+
+    - name: 2. 啟動 tcpdump (背景執行 - 綁定實體網卡)
+      # [修正重點]
+      # 1. -i {{ ansible_default_ipv4.interface }}: 自動抓取主要網卡 (如 ens34)，確保格式為標準 Ethernet
+      # 2. port not 22: 雖然我們會暫停後才傳輸，但加上這個過濾 SSH 指令封包更保險，資料更純淨
+      shell: |
+        nohup tcpdump -U -i {{ ansible_default_ipv4.interface }} -w /tmp/traffic_data/{{ inventory_hostname }}.pcap port not 22 > /dev/null 2>&1 &
+      async: 10
+      poll: 0
