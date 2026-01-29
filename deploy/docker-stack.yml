@@ -17,6 +17,7 @@ services:
       - /tmp
 
     deploy:
+      # [修改] 預設為 0，讓自動化腳本來控制何時啟動
       replicas: 0
       
       resources:
@@ -25,17 +26,21 @@ services:
           memory: 1200M      # 上限 1.2G
         reservations:
           cpus: '0.55'
-          memory: 600M       # [建議] 預留 600M 比較安全，避免單節點過載
+          memory: 600M       # 預留資源確保穩定
           
       placement:
         constraints:
           - node.role == worker
+        # [關鍵新增] 強制平均分配策略 (Spread Strategy)
+        # 這告訴 Swarm：請根據節點 ID 將任務平均分散，不要集中在某一台
+        preferences:
+          - spread: node.id
       
       # [關鍵 3] 優化更新策略
       update_config:
-        parallelism: 5       # 每次更新 5 個 (加速部署)
+        parallelism: 5
         delay: 10s
-        order: stop-first    # 先關舊的再開新的 (防止記憶體爆掉)
+        order: stop-first
       
       restart_policy:
         condition: on-failure
