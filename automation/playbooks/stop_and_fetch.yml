@@ -1,8 +1,8 @@
 ---
-- name: Stop Capture and Harvest Data
+- name: Fetch Recorded Data
   hosts: workers
   become: true
-  serial: 1
+  serial: 1  # 逐台傳輸，避免網路塞車
   tasks:
     - name: 0. 確保 rsync 已安裝
       apt:
@@ -10,42 +10,58 @@
         state: present
       ignore_errors: yes
 
-    # [修改] 加上 || true，如果行程已經死了也不要報錯 (紅字)
-    - name: 1. 停止 tcpdump (SIGTERM)
+    # [保險] 再次確認停止，避免殘留行程 (雖然 Python 已經停過一次了)
+    - name: 1. 確保 tcpdump 已停止
       shell: "pkill tcpdump || true"
-      
-    - name: 2. 等待 IO 寫入緩衝
-      pause:
-        seconds: 2
+      ignore_errors: yes
 
+    # 檢查檔案是否存在 (因為前面已經停了，檔案應該已經寫入完成)
+    - name: 2. 檢查 pcap 檔案是否存在
+      stat:
+        path: "/tmp/traffic_data/{{ inventory_hostname }}.pcap"
+      register: pcap_file
+
+    # 修改權限
     - name: 3. 修改 pcap 檔案擁有人 (Root -> User)
       file:
         path: "/tmp/traffic_data/{{ inventory_hostname }}.pcap"
         owner: "{{ ansible_user }}"
         group: "{{ ansible_user }}"
         mode: '0644'
+      when: pcap_file.stat.exists
       ignore_errors: yes
 
-    # [修改] 使用絕對路徑
-    - name: 4. 傳輸 pcap 檔案 (Rsync Pull)
+    # 高速傳輸
+    - name: 4. 高速傳輸 pcap 檔案 (Rsync Pull)
       synchronize:
         mode: pull
         src: "/tmp/traffic_data/{{ inventory_hostname }}.pcap"
-        # [修正] 使用 lookup('env', 'HOME') 抓取本機使用者的家目錄
-        # 這樣會解析為 /home/traffic_gen/Traffic-Project/data_lake/ 而不是 /root/...
         dest: "{{ lookup('env', 'HOME') }}/Traffic-Project/data_lake/"
         compress: no
+        # 限制頻寬，避免塞爆 Control Node 導致無法連下一台
+        rsync_opts:
+          - "--bwlimit=50000"
       become: false
+      when: pcap_file.stat.exists
       register: sync_result
       ignore_errors: yes
 
     - name: 4.5. 顯示傳輸失敗警告
       debug:
-        msg: "⚠️ 警告：{{ inventory_hostname }} 檔案傳輸失敗 (可能是檔案不存在)！"
-      when: sync_result is failed
+        msg: "⚠️ 警告：{{ inventory_hostname }} 檔案傳輸失敗！"
+      when: 
+        - pcap_file.stat.exists
+        - sync_result is failed
 
+    # 清理檔案
     - name: 5. 強制刪除遠端暫存檔
       file:
         path: "/tmp/traffic_data/{{ inventory_hostname }}.pcap"
         state: absent
       become: true
+      when: pcap_file.stat.exists
+
+    # 冷卻時間
+    - name: 6. 傳輸冷卻 (讓 Control Node 休息一下)
+      pause:
+        seconds: 5
