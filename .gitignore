@@ -4,3 +4,5 @@ src/venv/
 traffic_data/
 
 *.log
+
+data_lake/
