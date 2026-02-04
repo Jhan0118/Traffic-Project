@@ -1,8 +1,13 @@
 
 src/venv/
-
 traffic_data/
+<<<<<<< HEAD
 
 *.log
 
 data_lake/
+=======
+data_lake/
+
+*.log
+>>>>>>> feature/auto_run

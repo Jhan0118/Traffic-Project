@@ -1,0 +1,34 @@
+---
+- name: Start Packet Capture (Background)
+  hosts: workers
+  become: true
+  tasks:
+    - name: 1. 確保暫存目錄存在
+      file:
+        path: /tmp/traffic_data
+        state: directory
+        mode: '0777'
+
+    # [修改] 將錯誤輸出導向到 /tmp/tcpdump_error.log 以便除錯
+    - name: 2. 啟動 tcpdump (背景執行並紀錄 Log)
+      shell: |
+        nohup tcpdump -U -i {{ ansible_default_ipv4.interface }} -w /tmp/traffic_data/{{ inventory_hostname }}.pcap port not 22 > /tmp/tcpdump_error.log 2>&1 &
+      async: 10
+      poll: 0
+
+    # [新增] 稍微等待一下，檢查它是否還活著
+    - name: 3. 檢查 tcpdump 是否啟動成功
+      shell: "sleep 2 && pgrep -a tcpdump"
+      register: pgrep_result
+      ignore_errors: yes
+
+    # [新增] 如果啟動失敗，印出 Log 給我們看
+    - name: 4. 顯示錯誤日誌 (如果啟動失敗)
+      shell: "cat /tmp/tcpdump_error.log"
+      register: error_log
+      when: pgrep_result.rc != 0
+
+    - name: 5. 報錯並停止 (如果 Log 有內容)
+      debug:
+        msg: "❌ Tcpdump 啟動失敗！錯誤原因: {{ error_log.stdout }}"
+      when: pgrep_result.rc != 0
