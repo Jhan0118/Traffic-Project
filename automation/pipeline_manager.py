@@ -12,7 +12,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 INVENTORY_PATH = os.path.join(PROJECT_ROOT, "deploy", "inventory.ini")
 PLAYBOOK_DIR = os.path.join(SCRIPT_DIR, "playbooks")
-DATA_LAKE_DIR = os.path.join(PROJECT_ROOT, "data_lake")
+DATA_LAKE_DIR = "/mnt/d/Traffic_Data"
 LOG_FILE = os.path.join(SCRIPT_DIR, "pipeline_debug.log")
 
 SERVICE_NAME = "my-simulation_traffic-bot"
@@ -26,7 +26,7 @@ MAX_ROUNDS = DEFAULT_MAX_ROUNDS
 TARGET_REPLICAS = DEFAULT_TARGET_REPLICAS
 SUDO_PASSWORD = os.getenv('ANSIBLE_BECOME_PASS', "")
 
-# Logger 設定 (同時輸出到螢幕與檔案)
+# Logger 設定
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
@@ -56,7 +56,7 @@ def run_cmd(cmd, shell=False, check=True):
         return None
 
 def run_cmd_stream(cmd, description="Executing", timeout=900):
-    """串流指令執行 (雙重輸出 + Timeout)"""
+    """串流指令執行 (雙重輸出 + Timeout + 顯示警告)"""
     logging.info(f"--- [{description}] Start ---")
     start_time = time.time()
     
@@ -82,7 +82,9 @@ def run_cmd_stream(cmd, description="Executing", timeout=900):
             if "TASK [" in line:
                 try: task_name = line.split('TASK [')[-1].split(']')[0]
                 except IndexError: task_name = line
-                if "debug" not in task_name.lower() and "警告" not in task_name:
+                
+                # 包含 "debug" 但不包含 "警告" 的才隱藏，這樣警告訊息會顯示
+                if "debug" not in task_name.lower() or "警告" in task_name:
                     print(f"      -> Step: {task_name}")
             
             elif "changed:" in line or "ok:" in line:
@@ -94,13 +96,18 @@ def run_cmd_stream(cmd, description="Executing", timeout=900):
             elif any(k in line.lower() for k in ["fatal:", "failed:", "error", "unreachable"]):
                 print(f"      [!] ERROR: {line}")
 
+            # 捕捉 Ansible debug msg
+            elif "\"msg\":" in line:
+                msg_content = line.replace('"msg":', '').strip().strip('"')
+                print(f"      [!] Message: {msg_content}")
+
             if (time.time() - start_time) > timeout:
                 process.kill()
                 raise TimeoutError("Ansible task timed out")
 
         return_code = process.wait()
         logging.info(f"--- [{description}] End (RC={return_code}) ---")
-        return True 
+        return return_code == 0 
 
     except Exception as e:
         logging.error(f"Exception during execution: {e}")
@@ -113,9 +120,18 @@ def get_ansible_base_cmd(hosts_pattern, module="shell", args=None):
     if args: cmd.extend(["-a", args])
     return cmd
 
-def get_playbook_cmd(playbook_path):
+def get_playbook_cmd(playbook_path, extra_vars_dict=None):
+    """
+    [修改] 支援傳入額外變數 (extra_vars_dict)
+    """
+    vars_str = f"ansible_become_pass={SUDO_PASSWORD}"
+    
+    if extra_vars_dict:
+        for key, value in extra_vars_dict.items():
+            vars_str += f" {key}={value}"
+
     return ["ansible-playbook", "-i", INVENTORY_PATH, playbook_path,
-            "--extra-vars", f"ansible_become_pass={SUDO_PASSWORD}"]
+            "--extra-vars", vars_str]
 
 def get_max_file_size_gb():
     cmd = get_ansible_base_cmd("workers", args="stat -c %s /tmp/traffic_data/*.pcap 2>/dev/null || echo 0")
@@ -130,18 +146,12 @@ def get_max_file_size_gb():
     return max_size
 
 def ensure_service_scale(target_replicas, max_retries=5):
-    """
-    [新增] 確保 Scale 指令真正生效 (解決 0/0 問題)
-    """
     logging.info(f"Enforcing service scale to {target_replicas}...")
     scale_cmd = get_ansible_base_cmd("managers", args=f"docker service scale {SERVICE_NAME}={target_replicas}")
     check_cmd = get_ansible_base_cmd("managers", args=f"docker service ls --filter name={SERVICE_NAME}")
 
     for i in range(max_retries):
-        # 1. 發送指令
         run_cmd(scale_cmd, check=False)
-        
-        # 2. 檢查「目標值 (Desired)」是否變更
         output = run_cmd(check_cmd, check=False)
         if output:
             match = re.search(r'\s(\d+)/(\d+)', output)
@@ -152,9 +162,7 @@ def ensure_service_scale(target_replicas, max_retries=5):
                     return True
                 else:
                     logging.warning(f"Scale command sent but ignored (Desired={desired}). Retrying...")
-        
         time.sleep(3)
-    
     logging.error("Failed to enforce scale command after multiple retries!")
     return False
 
@@ -169,7 +177,6 @@ def verify_service_status(target_replicas, retry_times=6):
                 current = int(match.group(1))
                 desired = int(match.group(2))
                 print(f"      -> Attempt {i+1}/{retry_times}: {current}/{desired}")
-                
                 if target_replicas > 0:
                     if current >= target_replicas: return True
                 else:
@@ -216,19 +223,17 @@ def main():
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             logging.info(f">>> [Round {round_id}/{MAX_ROUNDS}] Start Time: {timestamp}")
 
-            # 1. 確保流量啟動指令送達 (解決 0/0 問題)
+            # 1. 啟動流量
             if not ensure_service_scale(TARGET_REPLICAS): raise RuntimeError("Scale command failed")
-            
-            # 2. 等待容器完全就緒
             if not verify_service_status(target_replicas=TARGET_REPLICAS, retry_times=60): 
                 raise RuntimeError("Containers failed to start")
 
-            # 3. 啟動錄製
+            # 2. 啟動錄製
             logging.info("Starting tcpdump...")
             run_cmd(get_playbook_cmd(os.path.join(PLAYBOOK_DIR, "start_capture.yml")))
             if not verify_capture_status(): raise RuntimeError("Capture failed")
             
-            # 4. 監控
+            # 3. 監控
             logging.info("Recording traffic...")
             start_time = time.time()
             while True:
@@ -242,30 +247,50 @@ def main():
                     break
                 time.sleep(10)
 
-            # 5. 確保流量停止指令送達
+            # 4. 停止流量
             if not ensure_service_scale(0): raise RuntimeError("Stop command failed")
             verify_service_status(target_replicas=0, retry_times=60)
             print("      -> Waiting 10s for connections to close...")
-            time.sleep(10)
+            time.sleep(60)
 
-            # 6. 全域停止 Tcpdump (減輕 Worker 負擔)
+            # 5. 全域停止 Tcpdump
             logging.info("Stopping tcpdump globally...")
             run_cmd(get_ansible_base_cmd("workers", args="pkill tcpdump || true"))
             time.sleep(5)
 
-            # 7. 檔案傳輸 (重試機制 + 串流顯示)
+            # 6. Fetch (Serial + Retry + Last Resort Cleanup)
             logging.info("Fetching files...")
             fetch_success = False
-            for attempt in range(3):
+            max_retries = 3
+            
+            for attempt in range(max_retries):
+                # 判斷是否為最後一次嘗試
+                is_last_attempt = (attempt == max_retries - 1)
+                
+                # 如果是最後一次，傳入 force_cleanup=yes
+                current_vars = {"force_cleanup": "yes"} if is_last_attempt else {"force_cleanup": "no"}
+
                 if attempt > 0:
-                    logging.warning(f"Retry transfer in 20s (Attempt {attempt+1}/3)...")
+                    logging.warning(f"Retry transfer in 20s (Attempt {attempt+1}/{max_retries})...")
                     time.sleep(20)
-                if run_cmd_stream(get_playbook_cmd(os.path.join(PLAYBOOK_DIR, "stop_and_fetch.yml")), description="Downloading Data"):
+                
+                if is_last_attempt:
+                    logging.warning("!!! LAST ATTEMPT: Files will be deleted even if transfer fails !!!")
+
+                # 執行 Playbook 並帶入變數
+                cmd = get_playbook_cmd(os.path.join(PLAYBOOK_DIR, "stop_and_fetch.yml"), extra_vars_dict=current_vars)
+                
+                if run_cmd_stream(cmd, description=f"Downloading Data (Attempt {attempt+1})", timeout=3600):
+                    logging.info("Transfer process completed successfully.")
                     fetch_success = True
                     break
-            if not fetch_success: logging.error("All transfer attempts failed!")
+                else:
+                    logging.warning("This transfer attempt failed.")
+            
+            if not fetch_success: 
+                logging.error("All transfer attempts failed! (Remote files cleaned up)")
 
-            # 8. 重新命名
+            # 7. Rename
             logging.info(f"Organizing files...")
             count = 0
             if os.path.exists(DATA_LAKE_DIR):
