@@ -2,7 +2,10 @@
 - name: Fetch Recorded Data
   hosts: workers
   become: true
-  serial: 1  # 逐台傳輸，避免網路塞車
+  vars:
+    # 預設不強制清理，除非 Python 腳本傳入 "yes"
+    force_cleanup: "no"
+
   tasks:
     - name: 0. 確保 rsync 已安裝
       apt:
@@ -10,18 +13,18 @@
         state: present
       ignore_errors: yes
 
-    # [保險] 再次確認停止，避免殘留行程 (雖然 Python 已經停過一次了)
+    # 再次確保停止，避免殘留
     - name: 1. 確保 tcpdump 已停止
       shell: "pkill tcpdump || true"
       ignore_errors: yes
 
-    # 檢查檔案是否存在 (因為前面已經停了，檔案應該已經寫入完成)
+    # 檢查檔案是否存在
     - name: 2. 檢查 pcap 檔案是否存在
       stat:
         path: "/tmp/traffic_data/{{ inventory_hostname }}.pcap"
       register: pcap_file
 
-    # 修改權限
+    # 修改權限以便傳輸
     - name: 3. 修改 pcap 檔案擁有人 (Root -> User)
       file:
         path: "/tmp/traffic_data/{{ inventory_hostname }}.pcap"
@@ -31,16 +34,15 @@
       when: pcap_file.stat.exists
       ignore_errors: yes
 
-    # 高速傳輸
-    - name: 4. 高速傳輸 pcap 檔案 (Rsync Pull)
+    # 傳輸檔案
+    - name: 4. 傳輸 pcap 檔案 (Rsync Pull)
       synchronize:
         mode: pull
         src: "/tmp/traffic_data/{{ inventory_hostname }}.pcap"
-        dest: "{{ lookup('env', 'HOME') }}/Traffic-Project/data_lake/"
+        dest: "/mnt/d/Traffic_Data"
         compress: no
-        # 限制頻寬，避免塞爆 Control Node 導致無法連下一台
         rsync_opts:
-          - "--bwlimit=50000"
+          - "--timeout=0"
       become: false
       when: pcap_file.stat.exists
       register: sync_result
@@ -48,20 +50,35 @@
 
     - name: 4.5. 顯示傳輸失敗警告
       debug:
-        msg: "⚠️ 警告：{{ inventory_hostname }} 檔案傳輸失敗！"
+        msg: "⚠️ 警告：{{ inventory_hostname }} 檔案傳輸失敗！(Force Cleanup: {{ force_cleanup }})"
       when: 
         - pcap_file.stat.exists
         - sync_result is failed
 
-    # 清理檔案
-    - name: 5. 強制刪除遠端暫存檔
+    # [關鍵修改] 刪除條件：
+    # 1. 傳輸成功 (succeeded)
+    # OR
+    # 2. 強制清理模式 (force_cleanup == yes)
+    - name: 5. 刪除遠端暫存檔 (Conditional Cleanup)
       file:
         path: "/tmp/traffic_data/{{ inventory_hostname }}.pcap"
         state: absent
       become: true
-      when: pcap_file.stat.exists
+      when: 
+        - pcap_file.stat.exists
+        - (sync_result is succeeded) or (force_cleanup | bool)
 
-    # 冷卻時間
-    - name: 6. 傳輸冷卻 (讓 Control Node 休息一下)
+    - name: 6. 傳輸冷卻
       pause:
         seconds: 5
+
+    # [報錯機制] 
+    # 如果傳輸失敗且不是強制清理模式，就報錯讓 Python 觸發重試
+    # 如果是強制清理模式，雖然傳輸失敗但檔案已刪，這輪就算了，不報錯以免卡住流程
+    - name: 7. 回報任務狀態
+      fail:
+        msg: "Transfer failed. Retry needed."
+      when: 
+        - pcap_file.stat.exists
+        - sync_result is failed
+        - not (force_cleanup | bool)
