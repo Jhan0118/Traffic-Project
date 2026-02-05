@@ -2,41 +2,39 @@ version: '3.8'
 
 services:
   traffic-bot:
-    # [Image] 使用 V3 版本
     image: jhancc0118/traffic-generation:v3
     environment:
       - HEADLESS_MODE=true
+      # [新增] 靶機的主機名稱設定
+      - TARGET_MAIL_HOST=mail-server
+      - TARGET_FTP_HOST=ftp-server
+      - TARGET_SSH_HOST=ssh-target
+      - TARGET_SMB_HOST=smb-server
     
-    # [關鍵 1] 掛載設定檔 (V3 必備)
     configs:
       - source: sites_config
         target: /traffic_data/sites.json
     
-    # [關鍵 2] 使用記憶體當暫存區 (保護硬碟)
     tmpfs:
       - /tmp
 
     deploy:
-      # [修改] 預設為 0，讓自動化腳本來控制何時啟動
       replicas: 0
       
       resources:
         limits:
-          cpus: '1.0'        # 允許突發到 1 核
-          memory: 1200M      # 上限 1.2G
+          cpus: '1.0'
+          memory: 1200M
         reservations:
-          cpus: '0.55'
-          memory: 600M       # 預留資源確保穩定
+          cpus: '0.25'
+          memory: 300M
           
       placement:
         constraints:
           - node.role == worker
-        # [關鍵新增] 強制平均分配策略 (Spread Strategy)
-        # 這告訴 Swarm：請根據節點 ID 將任務平均分散，不要集中在某一台
         preferences:
           - spread: node.id
       
-      # [關鍵 3] 優化更新策略
       update_config:
         parallelism: 5
         delay: 10s
@@ -46,7 +44,63 @@ services:
         condition: on-failure
         max_attempts: 3
 
-# [關鍵 4] 定義設定檔來源
+  # ==========================================
+  # [新增] 靶機服務 (跑在 Manager)
+  # ==========================================
+
+  # 1. 郵件伺服器
+  mail-server:
+    image: mailhog/mailhog
+    ports:
+      - "8025:8025"
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+
+  # 2. FTP 伺服器
+  ftp-server:
+    image: fauria/vsftpd
+    environment:
+      - FTP_USER=testuser
+      - FTP_PASS=testpass
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+
+  # 3. SSH 靶機
+  ssh-target:
+    image: linuxserver/openssh-server
+    ports:
+      - "2222:2222"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - PASSWORD_ACCESS=true
+      - USER_PASSWORD=password
+      - USER_NAME=linuxuser
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+
+  # 4. SMB 伺服器 (Windows 網芳)
+  smb-server:
+    image: dperson/samba
+    environment:
+      - USER=testuser;testpass
+      - SHARE=public;/mount/public;yes;no;no;all;none;;
+      - WORKGROUP=WORKGROUP
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+
 configs:
   sites_config:
     file: /srv/traffic-bot/sites.json
