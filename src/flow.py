@@ -34,28 +34,39 @@ DEFAULT_SITES = {
 }
 
 class SystemNoise:
-    """系統背景雜訊產生器"""
+    """系統背景雜訊產生器 (已優化)"""
     NOISE_DOMAINS = [
         "time.windows.com", "time.google.com", "pool.ntp.org",
-        "ctldl.windowsupdate.com", "dns.msftncsi.com"
+        "update.microsoft.com", "clients3.google.com", "detectportal.firefox.com",
+        "connectivity-check.ubuntu.com", "ntp.ubuntu.com"
     ]
 
     @staticmethod
-    async def run_background_dns_noise():
-        """在背景持續運作，隨機發送 DNS 查詢"""
+    async def _dns_query_loop():
+        """
+        模擬作業系統背景流量 (NTP, Update Check)
+        [優化重點]：使用非阻塞查詢 + 長時間隨機間隔，避免塞爆 Conntrack 表
+        """
+        logger.info("[Noise] 背景雜訊服務已啟動 (Low Frequency Mode)")
         while True:
             try:
-                target = random.choice(SystemNoise.NOISE_DOMAINS)
-                await asyncio.sleep(random.randint(10, 60))
-                # logger.info(f" [System Noise] Resolving DNS: {target}") # 減少 Log 雜訊
-                try:
-                    await asyncio.to_thread(socket.gethostbyname, target)
-                except socket.gaierror:
-                    pass
-            except asyncio.CancelledError:
-                break 
+                domain = random.choice(SystemNoise.NOISE_DOMAINS)
+                
+                # [修正 1] 使用 asyncio 的 resolver (非阻塞)，避免卡死 Python 主程序
+                # 原本的 socket.gethostbyname 是阻塞式的，DNS 慢的時候會導致整個 Worker 卡死
+                loop = asyncio.get_running_loop()
+                await loop.getaddrinfo(domain, 80)
             except Exception:
-                pass
+                pass # 忽略雜訊產生的錯誤
+
+            # [修正 2] 使用指數分佈 (Exponential Distribution) 模擬真實間隔
+            # scale=60.0 代表平均每 60 秒發生一次 (原本是 0.3 秒，太快了)
+            wait_time = np.random.exponential(scale=60.0)
+            
+            # [修正 3] 設定安全下限 (至少 10 秒)，防止極端值造成 Flood
+            final_wait = max(10.0, wait_time)
+            
+            await asyncio.sleep(final_wait)
 
 class ConfigLoader:
     """負責讀取外部 JSON 設定檔"""
