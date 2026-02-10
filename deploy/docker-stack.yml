@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   traffic-bot:
-    image: jhancc0118/traffic-generation:v3
+    image: jhancc0118/traffic-generation:v3.1.1
     environment:
       - HEADLESS_MODE=true
       # [新增] 靶機的主機名稱設定

@@ -316,7 +316,7 @@ async def run_browsing_session(sites_config):
         await context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         page = await context.new_page()
         
-        dns_task = asyncio.create_task(SystemNoise.run_background_dns_noise())
+        dns_task = asyncio.create_task(SystemNoise._dns_query_loop())
         proto_task = asyncio.create_task(ProtocolSimulator.run_protocol_noise())
 
         try:
