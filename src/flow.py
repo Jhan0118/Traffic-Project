@@ -12,6 +12,12 @@ import json
 import numpy as np
 import signal  # [新增] 訊號處理
 import sys     # [新增] 系統退出
+import smtplib
+import imaplib
+import ftplib
+import paramiko
+from email.mime.text import MIMEText
+from smb.SMBConnection import SMBConnection
 from playwright.async_api import async_playwright, Page, BrowserContext
 
 # --- 設定日誌 ---
@@ -67,6 +73,93 @@ class SystemNoise:
             final_wait = max(10.0, wait_time)
             
             await asyncio.sleep(final_wait)
+
+class ProtocolSimulator:
+    """[新增] 多重協定模擬器 (SMTP, FTP, SSH, SMB)"""
+    
+    # 從環境變數讀取 Service Name
+    HOST_MAIL = os.getenv("TARGET_MAIL_HOST", "mail-server")
+    HOST_FTP = os.getenv("TARGET_FTP_HOST", "ftp-server")
+    HOST_SSH = os.getenv("TARGET_SSH_HOST", "ssh-target")
+    HOST_SMB = os.getenv("TARGET_SMB_HOST", "smb-server")
+
+    @staticmethod
+    def _do_smtp():
+        """發送 Email"""
+        try:
+            msg = MIMEText(f"Simulation log entry {random.randint(1,9999)}")
+            msg['Subject'] = "Traffic Gen Report"
+            msg['From'] = "bot@traffic.local"
+            msg['To'] = "admin@traffic.local"
+            # MailHog SMTP port 1025
+            with smtplib.SMTP(ProtocolSimulator.HOST_MAIL, 1025, timeout=5) as server:
+                server.send_message(msg)
+        except Exception: pass
+
+    @staticmethod
+    def _do_ftp():
+        """FTP 檔案列表"""
+        try:
+            ftp = ftplib.FTP(timeout=5)
+            ftp.connect(ProtocolSimulator.HOST_FTP, 21)
+            ftp.login("testuser", "testpass")
+            ftp.nlst()
+            ftp.quit()
+        except Exception: pass
+
+    @staticmethod
+    def _do_ssh():
+        """SSH 遠端指令執行"""
+        try:
+            client = paramiko.SSHClient()
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            # SSH Target 內部 port 是 2222 (根據 docker-stack 設定)
+            client.connect(
+                ProtocolSimulator.HOST_SSH, 
+                port=2222, 
+                username='linuxuser', 
+                password='password',
+                timeout=5
+            )
+            client.exec_command('ls -la /tmp')
+            client.close()
+        except Exception: pass
+
+    @staticmethod
+    def _do_smb():
+        """SMB 檔案存取"""
+        try:
+            client_name = f"Worker-{random.randint(1,100)}"
+            conn = SMBConnection("testuser", "testpass", client_name, "SMB-SERVER", use_ntlm_v2=True)
+            if conn.connect(ProtocolSimulator.HOST_SMB, 445, timeout=5):
+                conn.listPath("public", "/")
+                conn.close()
+        except Exception: pass
+
+    @staticmethod
+    async def run_protocol_noise():
+        """背景協定流量產生迴圈"""
+        logger.info("[Protocol] 多協定模擬服務已啟動")
+        actions = [
+            ProtocolSimulator._do_smtp,
+            ProtocolSimulator._do_ftp,
+            ProtocolSimulator._do_ssh,
+            ProtocolSimulator._do_smb
+        ]
+        
+        while True:
+            try:
+                # 隨機休息 30 ~ 90 秒
+                await asyncio.sleep(random.randint(30, 90))
+                
+                # 隨機選一個動作執行 (使用 to_thread 避免阻塞)
+                action = random.choice(actions)
+                await asyncio.to_thread(action)
+                
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                pass
 
 class ConfigLoader:
     """負責讀取外部 JSON 設定檔"""
@@ -224,6 +317,7 @@ async def run_browsing_session(sites_config):
         page = await context.new_page()
         
         dns_task = asyncio.create_task(SystemNoise.run_background_dns_noise())
+        proto_task = asyncio.create_task(ProtocolSimulator.run_protocol_noise())
 
         try:
             # --- Persona (興趣) 隨機選擇 ---
@@ -311,6 +405,7 @@ async def run_browsing_session(sites_config):
 
         finally:
             dns_task.cancel()
+            proto_task.cancel()
             await browser.close()
 
 def graceful_shutdown(signum, frame):
