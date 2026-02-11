@@ -1,2 +1,4 @@
 playwright==1.57.0
 numpy
+paramiko==4.0.0
+pysmb==1.2.13

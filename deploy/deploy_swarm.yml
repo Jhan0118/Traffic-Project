@@ -55,7 +55,7 @@
     # [新增] 預先下載 Image，這樣 Python 腳本啟動時就不用等下載
     - name: 預先下載 Traffic Bot Image (Pre-pull)
       community.docker.docker_image:
-        name: jhancc0118/traffic-generation:v3
+        name: jhancc0118/traffic-generation:v3.1.1
         source: pull
         force_source: yes
       register: image_pull

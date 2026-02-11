@@ -11,3 +11,5 @@ data_lake/
 
 *.log
 >>>>>>> feature/auto_run
+
+.venv/
