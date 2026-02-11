@@ -69,8 +69,8 @@ text
 修改 `src/flow.py` 後重新打包與推送：
 
 ```bash
-docker build -t jhancc0118/traffic-generation:v3.4 ./src
-docker push jhancc0118/traffic-generation:v3.4
+docker build -t <docker_user>/traffic-generation:<version> ./src
+docker push <docker_user>/traffic-generation:<version>
 ```
 注意：請同步更新 docker-stack.yml 及 deploy_swarm.yml 內的版本標籤。
 
