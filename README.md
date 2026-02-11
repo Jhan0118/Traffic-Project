@@ -47,7 +47,7 @@
   ⚠️ 長時間錄製會造成高 I/O 與記憶體壓力，請監控 OOM。
 - **磁碟空間**
   - Worker：至少 30GB（每輪錄製約 2GB）  
-  - Control Node (WSL)：建議將資料湖設至 Windows 實體磁碟（例如 `/mnt/d/`），避免 `ext4.vhdx` 膨脹
+  - Control Node (WSL)：建議將儲存 pcap 檔的資料夾設至 Windows 實體磁碟（例如 `/mnt/d/`），避免 `ext4.vhdx` 膨脹
 - **網路**
   - Control Node 需設定 SSH 免密登入各節點  
   - 節點間須為同區網，避免 Rsync 傳輸過慢
